@@ -20,6 +20,10 @@ export interface LaneData {
   dom?: HTMLDivElement;
   forceEditMode?: boolean;
   sorted?: LaneSort | string;
+  // Hierarchical nested groups support
+  level?: number;           // Heading level (1-6) for hierarchy depth
+  isCollapsed?: boolean;    // Collapse state for parent lanes
+  parentId?: string;        // Reference to parent lane ID
 }
 
 export interface DataKey {
@@ -103,7 +107,7 @@ export interface BoardData {
 }
 
 export type Item = Nestable<ItemData>;
-export type Lane = Nestable<LaneData, Item>;
+export type Lane = Nestable<LaneData, Lane | Item>; // Support both nested lanes and items
 export type Board = Nestable<BoardData, Lane>;
 export type MetadataSetting = Nestable<DataKey>;
 export type TagColorSetting = Nestable<TagColor>;
@@ -127,7 +131,7 @@ export const ItemTemplate = {
 };
 
 export const LaneTemplate = {
-  accepts: [DataTypes.Lane],
+  accepts: [DataTypes.Lane, DataTypes.Item], // Accept both nested lanes and items
   type: DataTypes.Lane,
 };
 
@@ -178,4 +182,29 @@ export function isEditing(state: EditState): state is EditCoordinates {
   if (state === null) return false;
   if (typeof state === 'number') return false;
   return true;
+}
+
+// Utility functions for hierarchical lane operations
+export function isLane(item: Lane | Item): item is Lane {
+  return item.type === DataTypes.Lane;
+}
+
+export function isItem(item: Lane | Item): item is Item {
+  return item.type === DataTypes.Item;
+}
+
+export function getLaneLevel(lane: Lane): number {
+  return lane.data.level || 1;
+}
+
+export function isParentLane(lane: Lane): boolean {
+  return lane.children.some(child => isLane(child));
+}
+
+export function getNestedLanes(lane: Lane): Lane[] {
+  return lane.children.filter(isLane);
+}
+
+export function getNestedItems(lane: Lane): Item[] {
+  return lane.children.filter(isItem);
 }

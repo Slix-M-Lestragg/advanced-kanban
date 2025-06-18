@@ -14,6 +14,8 @@ import {
   ItemTemplate,
   Lane,
   LaneTemplate,
+  isLane,
+  isItem,
 } from 'src/components/types';
 import { laneTitleWithMaxItems } from 'src/helpers';
 import { defaultSort } from 'src/helpers/util';
@@ -246,11 +248,16 @@ export function astToUnhydratedBoard(
 ): Board {
   const lanes: Lane[] = [];
   const archive: Item[] = [];
+  
+  // Stack-based approach for building hierarchical structure
+  const laneStack: { lane: Lane; level: number }[] = [];
+  
   root.children.forEach((child, index) => {
     if (child.type === 'heading') {
       const isArchive = isArchiveLane(child, root.children, index);
       const headingBoundary = getNodeContentBoundary(child as Parent);
       const title = getStringFromBoundary(md, headingBoundary);
+      const level = (child as any).depth || 1;
 
       let shouldMarkItemsComplete = false;
 
@@ -287,34 +294,49 @@ export function astToUnhydratedBoard(
         return;
       }
 
-      if (!list) {
-        lanes.push({
-          ...LaneTemplate,
-          children: [],
-          id: generateInstanceId(),
-          data: {
-            ...parseLaneTitle(title),
-            shouldMarkItemsComplete,
-          },
-        });
-      } else {
-        lanes.push({
-          ...LaneTemplate,
-          children: (list as List).children.map((listItem) => {
-            const data = listItemToItemData(stateManager, md, listItem);
-            return {
-              ...ItemTemplate,
-              id: generateInstanceId(),
-              data,
-            };
-          }),
-          id: generateInstanceId(),
-          data: {
-            ...parseLaneTitle(title),
-            shouldMarkItemsComplete,
-          },
-        });
+      // Create the lane with hierarchical properties
+      const laneId = generateInstanceId();
+      const lane: Lane = {
+        ...LaneTemplate,
+        children: list ? (list as List).children.map((listItem) => {
+          const data = listItemToItemData(stateManager, md, listItem);
+          return {
+            ...ItemTemplate,
+            id: generateInstanceId(),
+            data,
+          };
+        }) : [],
+        id: laneId,
+        data: {
+          ...parseLaneTitle(title),
+          shouldMarkItemsComplete,
+          // Add hierarchical properties
+          level,
+          isCollapsed: false,
+          parentId: undefined, // Will be set below if nested
+        },
+      };
+
+      // Handle hierarchical structure using stack
+      // Pop lanes from stack that are at same or deeper level
+      while (laneStack.length > 0 && laneStack[laneStack.length - 1].level >= level) {
+        laneStack.pop();
       }
+
+      // If stack is not empty, current lane is a child of the top lane
+      if (laneStack.length > 0) {
+        const parentEntry = laneStack[laneStack.length - 1];
+        lane.data.parentId = parentEntry.lane.id;
+        
+        // Add this lane as a child of the parent
+        parentEntry.lane.children.push(lane);
+      } else {
+        // Top-level lane, add to main lanes array
+        lanes.push(lane);
+      }
+
+      // Push current lane to stack for potential children
+      laneStack.push({ lane, level });
     }
   });
 
@@ -386,8 +408,12 @@ export function reparseBoard(stateManager: StateManager, board: Board) {
         $set: board.children.map((lane) => {
           return update(lane, {
             children: {
-              $set: lane.children.map((item) => {
-                return updateItemContent(stateManager, item, item.data.titleRaw);
+              $set: lane.children.map((child) => {
+                // Only reparse items, not nested lanes
+                if (isItem(child)) {
+                  return updateItemContent(stateManager, child, child.data.titleRaw);
+                }
+                return child; // Return lanes unchanged
               }),
             },
           });
@@ -404,10 +430,12 @@ function itemToMd(item: Item) {
   return `- [${item.data.checkChar}] ${addBlockId(indentNewLines(item.data.titleRaw), item)}`;
 }
 
-function laneToMd(lane: Lane) {
+function laneToMd(lane: Lane): string {
   const lines: string[] = [];
+  const level = lane.data.level || 1;
+  const headingPrefix = '#'.repeat(Math.max(1, level + 1)); // h2 for level 1, h3 for level 2, etc.
 
-  lines.push(`## ${replaceNewLines(laneTitleWithMaxItems(lane.data.title, lane.data.maxItems))}`);
+  lines.push(`${headingPrefix} ${replaceNewLines(laneTitleWithMaxItems(lane.data.title, lane.data.maxItems))}`);
 
   lines.push('');
 
@@ -415,8 +443,13 @@ function laneToMd(lane: Lane) {
     lines.push(completeString);
   }
 
-  lane.children.forEach((item) => {
-    lines.push(itemToMd(item));
+  lane.children.forEach((child) => {
+    if (isItem(child)) {
+      lines.push(itemToMd(child));
+    } else if (isLane(child)) {
+      // Recursively handle nested lanes
+      lines.push(laneToMd(child));
+    }
   });
 
   lines.push('');
