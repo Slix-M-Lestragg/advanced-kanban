@@ -63,6 +63,7 @@ export interface KanbanSettings {
   'date-trigger'?: string;
   'full-list-lane-width'?: boolean;
   'hide-card-count'?: boolean;
+  'hierarchical-collapse'?: Record<string, boolean>;
   'inline-metadata-position'?: 'body' | 'footer' | 'metadata-table';
   'lane-width'?: number;
   'link-date-to-daily-note'?: boolean;
@@ -95,6 +96,7 @@ export interface KanbanSettings {
 export interface KanbanViewSettings {
   [frontmatterKey]?: KanbanFormat;
   'list-collapse'?: boolean[];
+  'hierarchical-collapse'?: Record<string, boolean>;
 }
 
 export const settingKeyLookup: Set<keyof KanbanSettings> = new Set([
@@ -111,6 +113,7 @@ export const settingKeyLookup: Set<keyof KanbanSettings> = new Set([
   'date-trigger',
   'full-list-lane-width',
   'hide-card-count',
+  'hierarchical-collapse',
   'inline-metadata-position',
   'lane-width',
   'link-date-to-daily-note',
